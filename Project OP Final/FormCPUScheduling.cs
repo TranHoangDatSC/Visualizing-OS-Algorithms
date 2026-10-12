@@ -1,501 +1,387 @@
-﻿using System;
+﻿using Project_OP_Final.Class;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Security.AccessControl;
-using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Documents;
 using System.Windows.Forms;
-using static Project_OP_Final.Process;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.TaskbarClock;
-
-/*
- TODO: 
-    Sẽ như thế nào nếu sau khi form load(gridData có cột Priority), 
-        user chọn Run thuật toán với radWithoutPriority.Checked? 
-        -> Cần phải xóa cột Priority trong gridData sau khi nút Run được nhấn.
- */
 
 namespace Project_OP_Final
 {
     public partial class FormCPUScheduling : Form
     {
+        private const string AlgoPriority = "Priority Scheduling";
+        private const string AlgoFCFS = "(FCFS) First Come First Serve";
+        private const string AlgoSJF = "(SJF) Shortest Job First";
+        private const string AlgoSRTF = "(SRTF) Shortest Remaining Time First";
+        private const string AlgoRR = "(RR) Round Robin";
+
+        private const string ColProcessID = "ProcessID";
+        private const string ColArrivalTime = "ArrivalTime";
+        private const string ColBurstTime = "BurstTime";
+        private const string ColPriority = "Priority";
+
+        // Results of the last run, used when saving the report
+        private List<Process> lastProcesses;
+        private List<ProcessSnapshot> lastTimeline;
+
         public FormCPUScheduling()
         {
             InitializeComponent();
-
         }
 
         private void FormCPUScheduling_Load(object sender, EventArgs e)
         {
-            //About combobox comboAlgorithm
-            comboAlgorithm.Items.Add("Priority Scheduling");
-            comboAlgorithm.Items.Add("(FCFS)First Come First Serve"); 
-            comboAlgorithm.Items.Add("(SJF) Shortest Job First");
-            comboAlgorithm.Items.Add("(SRTF) Shortest Remaining Time First");
-            comboAlgorithm.Items.Add("(RR) Round Robin"); //+ Quantum Time
-            lblChartSequence.Text = "";
-            defaultUI();
-            radWithoutPriority.Enabled = true;
-            radWithPriority.Enabled = true;
+            comboAlgorithm.Items.AddRange(new object[] { AlgoPriority, AlgoFCFS, AlgoSJF, AlgoSRTF, AlgoRR });
 
-            setUpGridCollumns(); //Vẫn còn cột Priority trong gridData nhưng sẽ được ẩn đi sau khi Run thuật toán không có Priority
+            SetUpGridColumns();
+            gridData.RowsRemoved += (s, args) => RenumberProcesses();
+            radWithPriority.CheckedChanged += (s, args) => UpdatePriorityColumn();
 
+            DefaultUI();
         }
 
-        //UI modification when the user selects an algorithm
+        private string SelectedAlgorithm => comboAlgorithm.SelectedItem?.ToString() ?? "";
+
+        private bool UsesPriority => radWithPriority.Checked || SelectedAlgorithm == AlgoPriority;
+
+        // ---------------- Event handlers ----------------
+
         private void comboAlgorithm_SelectedIndexChanged(object sender, EventArgs e)
         {
-            string selectedAlgorithm = comboAlgorithm.SelectedItem.ToString();
-
-            //Only show the quantum time conponents for Round Robin algorithm
-            bool isRoundRobin = selectedAlgorithm.Equals("(RR) Round Robin");
-
+            // Quantum time is only needed by Round Robin
+            bool isRoundRobin = SelectedAlgorithm == AlgoRR;
             lblQuantumTime.Visible = isRoundRobin;
             txtQuantumTime.Visible = isRoundRobin;
             lblSecond.Visible = isRoundRobin;
 
-            //Hide labels for Priority when the selected algorithm is "Priority Scheduling"
-            bool isPriorityScheduling = selectedAlgorithm.Equals("Priority Scheduling");
-            
+            // Priority Scheduling always uses priority, so the with/without option is hidden
+            bool isPriorityScheduling = SelectedAlgorithm == AlgoPriority;
             lblPriority.Visible = !isPriorityScheduling;
             radWithoutPriority.Visible = !isPriorityScheduling;
             radWithPriority.Visible = !isPriorityScheduling;
-            radWithoutPriority.Checked = !isPriorityScheduling; 
-            radWithPriority.Checked = isPriorityScheduling; 
+            radWithPriority.Checked = isPriorityScheduling;
+            radWithoutPriority.Checked = !isPriorityScheduling;
+
+            UpdatePriorityColumn();
         }
 
-        //btnReset: Reset giao diện về mặc định
         private void btnReset_Click(object sender, EventArgs e)
         {
-            // Giao diện mẫu: Default algorithm là FCFS
-            defaultUI();
-
-            // Xóa data grid view của bảng dữ liệu và kết quả
-            gridViewsReset();
-            gridData.Columns["Priority"].Visible = true; // Hiển thị lại cột Priority nếu nó đã bị ẩn trước đó
-
+            gridData.Rows.Clear();
+            ClearResults();
+            DefaultUI();
         }
 
-        //Auto-generate ProcessID when a new row is added to gridData
         private void gridData_CellValueChanged(object sender, DataGridViewCellEventArgs e)
         {
-            for (int i = 0; i < gridData.Rows.Count; i++)
-            {
-                var row = gridData.Rows[i];
-                if (!row.IsNewRow)
-                {
-                    row.Cells["ProcessID"].Value = "P" + (i + 1);
-                }
-            }
+            RenumberProcesses();
         }
 
-        //Start execution of the selected algorithm
         private void btnRun_Click(object sender, EventArgs e)
         {
-            /*
-            Workflow:
-            1. Get data from gridData
-            2. Validate the data
-                If valid, run the selected algorithm
-                If not valid, show error message
-            3. Perform calculation based on 
-                the selected algorithm
-                + with/ without priority radBtn checked
-            4. Show the result in gridResult and gridAverage
-            5. (Test after the calculation reached correction) 
-            Perform string manipulation to print the gantt chart out into panelGanttChart  
-            */
+            if (!TryReadProcesses(out List<Process> processes))
+                return;
 
-            //Throw error: If no data in gridData
-            if (gridData.Rows.Count == 0 || gridData.Rows[0].IsNewRow)
+            int quantumTime = 0;
+            if (SelectedAlgorithm == AlgoRR &&
+                (!int.TryParse(txtQuantumTime.Text.Trim(), out quantumTime) || quantumTime <= 0))
             {
-                MessageBox.Show("⚠️ No data in the grid.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                informError("⚠️Build Failed - Please ensure all data is entered correctly.");
+                ShowError("Please enter a positive Quantum Time.", "⚠️ Invalid Quantum Time");
                 return;
             }
-            
-            if (radWithoutPriority.Checked)
+
+            List<ProcessSnapshot> timeline = RunAlgorithm(processes, quantumTime);
+            if (timeline == null)
             {
-                //Hide the Priority column 
-                gridData.Columns["Priority"].Visible = false;
-            }
-            var quantumTime = 0;
-            if (comboAlgorithm.SelectedItem.ToString() == "(RR) Round Robin")
-            {
-                if (!int.TryParse(txtQuantumTime.Text, out quantumTime) || quantumTime <= 0)
-                {
-                    MessageBox.Show("Please enter a positive Quantum Time.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    informError("⚠️Invalid Quantum Time");
-                    return;
-                }
-            } 
-
-            List<Process> processes = new List<Process>();
-            List<ProcessSnapshot> progress = new List<ProcessSnapshot>();
-
-            foreach (DataGridViewRow row in gridData.Rows)
-            {
-                if (row.IsNewRow) continue; // Skip the new row placeholder
-
-                string id = row.Cells["ProcessID"].Value.ToString();
-
-                if (!int.TryParse(row.Cells["ArrivalTime"].Value?.ToString(), out int arrivalTime))
-                {
-                    MessageBox.Show($"Invalid Arrival Time Input for id {id}.\r\nTry Again.");
-                    return; // Exit if invalid input -> Avoid crashing 
-                }
-
-                if (!int.TryParse(row.Cells["BurstTime"].Value ? .ToString() ,out int burstTime))
-                {
-                    MessageBox.Show($"Invalid Burst Time Input for id {id}.\r\nTry Again.");
-                    return;
-                }
-
-                int priority = 0;
-                // If Priority column exists, get the priority value
-                if (radWithPriority.Checked || comboAlgorithm.SelectedItem.ToString() == "Priority Scheduling")
-                {
-                    if (!int.TryParse(row.Cells["Priority"].Value?.ToString(), out priority))
-                    {
-                        MessageBox.Show($"Invalid Priority Input for id {id}.\r\nTry Again.");
-                        return;
-                    }
-                }
-
-                    processes.Add(new Process
-                    {
-                        ID = id,
-                        ArrivalTime = arrivalTime,
-                        BurstTime = burstTime,
-                        Priority = priority,
-                        StartTime = -1,
-                        RemainingTime = burstTime,
-                        CompletionTime = 0,
-                        //Initialize TurnaroundTime and WaitingTime to 0
-                        TurnaroundTime = 0,
-                        WaitingTime = 0
-                    }
-                    );
-            }
-            
-            //NOT with priority algorithms
-            if (radWithoutPriority.Checked)
-            {
-                switch (comboAlgorithm.SelectedItem.ToString())
-                {
-                    case "(FCFS)First Come First Serve":
-                        Process.FCFSRun(processes);
-                        ganttChartShow(processes);
-                        break;
-                    case "(SJF) Shortest Job First":    
-                        Process.SJFRun(processes);
-                        ganttChartShow(processes);
-                        break;
-                    case "(SRTF) Shortest Remaining Time First":
-                        progress  = Process.SRTFRun(processes);
-                        ganttChartShow(progress);
-                        break;
-                    case "(RR) Round Robin":
-                        progress = Process.RRRun(processes, quantumTime);
-                        ganttChartShow(progress);
-                        break;
-                    default:
-                        informError("⚠️Build Failed - Please ensure all data is entered correctly.");
-                        break;
-                }
-            }
-            //WITH priority algorithms
-            if (radWithPriority.Checked)
-            {
-                switch (comboAlgorithm.SelectedItem.ToString())
-                {
-                    case "Priority Scheduling":
-                        Process.PriorityRun(processes);
-                        ganttChartShow(processes);
-                        break;
-                    case "(FCFS)First Come First Serve":
-                        Process.PriorityRun(processes); //Do về mặt logic, FCFS là PriorityRun với Priority = 0
-                        ganttChartShow(processes);
-                        break;
-                    case "(SJF) Shortest Job First":
-                        Process.P_SJFRun(processes);
-                        ganttChartShow(processes);
-                        break;
-                    case "(SRTF) Shortest Remaining Time First":
-                        progress = Process.P_SRTFRun(processes);
-                        ganttChartShow(progress);
-                        break;
-                    case "(RR) Round Robin":
-                        progress = Process.P_RRRun(processes, quantumTime);
-                        ganttChartShow(progress);
-                        break;
-                    default:
-                        informError("⚠️Build Failed - Please ensure all data is entered correctly.");
-                        break;
-                }
+                InformError("⚠️ Build Failed - Please select a valid algorithm.");
+                return;
             }
 
-
-            gridResult.Rows.Clear(); // Clear previous results
-            foreach (var p in processes){
-                gridResult.Rows.Add(p.TurnaroundTime, p.WaitingTime);
-            }
-
-            double avgTAT = processes.Average(p => p.TurnaroundTime);
-            double avgWT = processes.Average(p => p.WaitingTime);
-
-            gridAverage.Rows.Clear(); // Clear previous averages
-            gridAverage.Rows.Add(avgTAT, avgWT);
-            txtProcessNumber.Text = (gridData.RowCount - 1).ToString() ; // Update the process count
-
+            ShowResults(processes, timeline);
         }
 
         private void btnLoadFromFile_Click(object sender, EventArgs e)
         {
+            string filePath = DataFile.PickFileToOpen("SRTF_CPU.txt");
+            if (filePath == null) return;
+
             try
             {
-                string filePath = Path.Combine(Application.StartupPath, "Data", "SRTF_CPU.txt");
+                var rows = new List<int[]>();
+                foreach (string line in File.ReadAllLines(filePath))
+                {
+                    string[] parts = line.Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length == 0) continue;
+                    if (parts.Length < 2)
+                        throw new FormatException($"Line \"{line}\" needs at least Arrival Time and Burst Time.");
 
-                // Read all lines
-                string[] lines = File.ReadAllLines(filePath);
+                    int arrival = int.Parse(parts[0]);
+                    int burst = int.Parse(parts[1]);
+                    int priority = parts.Length >= 3 ? int.Parse(parts[2]) : 0;
+                    rows.Add(new[] { arrival, burst, priority });
+                }
 
-                // Clear existing rows
                 gridData.Rows.Clear();
+                for (int i = 0; i < rows.Count; i++)
+                    gridData.Rows.Add($"P{i + 1}", rows[i][0], rows[i][1], rows[i][2]);
 
-                int processCount = 0;
-
-                foreach (string line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    string[] parts = line.Split(' ');
-
-                    if (parts.Length >= 2) // At least Arrival and Burst time
-                    {
-                        int arrival = int.Parse(parts[0]);
-                        int burst = int.Parse(parts[1]);
-                        int prio = (parts.Length >= 3) ? int.Parse(parts[2]) : 0;
-
-                        gridData.Rows.Add($"P{++processCount}", arrival, burst, prio);
-                    }
-                }
-                if (radWithoutPriority.Checked)
-                {
-                    //Hide the Priority column 
-                    gridData.Columns["Priority"].Visible = false;
-                }
-                else
-                {
-                    gridData.Columns["Priority"].Visible = true;
-                }
-                inform("Load file successfully"); // Inform the user that the file has been loaded successfully
+                ClearResults();
+                txtProcessNumber.Text = rows.Count.ToString();
+                Inform($"Loaded {rows.Count} process(es) from {Path.GetFileName(filePath)}");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error loading file: {ex.Message}");
-                informError("⚠️Failed to load file");
+                ShowError($"Error loading file: {ex.Message}", "⚠️ Failed to load file");
             }
         }
 
         private void btnSaveData_Click(object sender, EventArgs e)
         {
+            if (lastProcesses == null)
+            {
+                MessageBox.Show("Please run an algorithm before saving the result.",
+                                "Empty Content", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                InformError("⚠️ No content to save");
+                return;
+            }
+
+            string filePath = DataFile.PickFileToSave("CPU_FileSave.txt");
+            if (filePath == null) return;
+
             try
             {
-                if (gridData.RowCount <= 1)
-                {
-                    MessageBox.Show("Please enter or load a file first.",
-                                    "Empty Content", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    informError("⚠️No content to save");
-                    return;
-                }
-
-                string content = $"{comboAlgorithm.SelectedItem} Implementation File\n\n";
-
-                content += "=== Dữ liệu ===\n";
-                foreach (DataGridViewRow row in gridData.Rows)
-                {
-                    if (row.IsNewRow || row.Cells.Count < 4) continue;
-
-                    if (row.Cells[0].Value == null || row.Cells[1].Value == null ||
-                        row.Cells[2].Value == null || row.Cells[3].Value == null) continue;
-
-                    content += $"Process ID: {row.Cells[0].Value}, " +
-                               $"Arrival Time: {row.Cells[1].Value}, " +
-                               $"Burst Time: {row.Cells[2].Value}, " +
-                               $"Priority: {row.Cells[3].Value}\n";
-                }
-
-
-                content += "\n=== Kết Quả ===\n";
-                for (int i = 0; i < gridResult.Rows.Count - 1; i++)
-                {
-                    var resultRow = gridResult.Rows[i];
-                    var dataRow = gridData.Rows[i];
-
-                    if (resultRow.Cells["TurnaroundTime"].Value == null || resultRow.Cells["WaitingTime"].Value == null)
-                        continue;
-
-                    content += $"Process ID: {dataRow.Cells["ProcessID"].Value}, " +
-                               $"Turn-around Time: {resultRow.Cells["TurnaroundTime"].Value}, " +
-                               $"Waiting Time: {resultRow.Cells["WaitingTime"].Value}\n";
-                }
-
-
-
-                content += "\n=== Trung Bình ===\n";
-                foreach (DataGridViewRow row in gridAverage.Rows)
-                {
-                    if (row.IsNewRow || row.Cells.Count < 2) continue;
-
-                    if (row.Cells[0].Value == null || row.Cells[1].Value == null) continue;
-
-                    content += $"\t\t\t{row.Cells[0].Value}:\t\t\t{row.Cells[1].Value}\n";
-                }
-
-
-                // Create file directory and save
-                string dataDir = Path.Combine(Application.StartupPath, "Data");
-                if (!Directory.Exists(dataDir))
-                {
-                    Directory.CreateDirectory(dataDir);
-                }
-
-                string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CPU_FileSave.txt");
-                File.WriteAllText(filePath, content);
-
-
-                inform("File saved successfully");
+                File.WriteAllText(filePath, BuildReport(), Encoding.UTF8);
+                Inform($"File saved successfully: {Path.GetFileName(filePath)}");
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message,
-                                "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                informError("⚠️Failed to save file");
+                ShowError(ex.Message, "⚠️ Failed to save file");
             }
         }
 
+        // ---------------- Algorithm ----------------
 
-
-        //---------------Additional Methods---------------
-
-        private void setUpGridCollumns()
+        private List<ProcessSnapshot> RunAlgorithm(List<Process> processes, int quantumTime)
         {
-            //gridData
-            gridData.Columns.Add("ProcessID", "Process ID");
-            gridData.Columns.Add("ArrivalTime", "Arrival Time");
-            gridData.Columns.Add("BurstTime", "Burst Time");
-            if (radWithPriority.Checked || comboAlgorithm.SelectedItem.ToString() == "Priority Scheduling")
+            if (UsesPriority)
             {
-                gridData.Columns.Add("Priority", "Priority");
+                switch (SelectedAlgorithm)
+                {
+                    case AlgoPriority:
+                    case AlgoFCFS: // FCFS with priority is non-preemptive Priority Scheduling
+                        return CPUScheduling.Priority(processes);
+                    case AlgoSJF:
+                        return CPUScheduling.PrioritySJF(processes);
+                    case AlgoSRTF:
+                        return CPUScheduling.PrioritySRTF(processes);
+                    case AlgoRR:
+                        return CPUScheduling.PriorityRoundRobin(processes, quantumTime);
+                }
             }
+            else
+            {
+                switch (SelectedAlgorithm)
+                {
+                    case AlgoFCFS:
+                        return CPUScheduling.FCFS(processes);
+                    case AlgoSJF:
+                        return CPUScheduling.SJF(processes);
+                    case AlgoSRTF:
+                        return CPUScheduling.SRTF(processes);
+                    case AlgoRR:
+                        return CPUScheduling.RoundRobin(processes, quantumTime);
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Reads and validates the processes entered in gridData.</summary>
+        private bool TryReadProcesses(out List<Process> processes)
+        {
+            processes = new List<Process>();
+
+            foreach (DataGridViewRow row in gridData.Rows)
+            {
+                if (row.IsNewRow) continue;
+
+                string id = $"P{row.Index + 1}";
+
+                if (!int.TryParse(row.Cells[ColArrivalTime].Value?.ToString(), out int arrivalTime) || arrivalTime < 0)
+                {
+                    ShowError($"Invalid Arrival Time for {id} (must be an integer ≥ 0).", "⚠️ Invalid Arrival Time");
+                    return false;
+                }
+
+                if (!int.TryParse(row.Cells[ColBurstTime].Value?.ToString(), out int burstTime) || burstTime <= 0)
+                {
+                    ShowError($"Invalid Burst Time for {id} (must be an integer > 0).", "⚠️ Invalid Burst Time");
+                    return false;
+                }
+
+                int priority = 0;
+                if (UsesPriority && !int.TryParse(row.Cells[ColPriority].Value?.ToString(), out priority))
+                {
+                    ShowError($"Invalid Priority for {id} (must be an integer).", "⚠️ Invalid Priority");
+                    return false;
+                }
+
+                processes.Add(new Process(id, arrivalTime, burstTime, priority));
+            }
+
+            if (processes.Count == 0)
+            {
+                ShowError("⚠️ No data in the grid.", "⚠️ Build Failed - Please ensure all data is entered correctly.");
+                return false;
+            }
+
+            return true;
+        }
+
+        // ---------------- Display ----------------
+
+        private void ShowResults(List<Process> processes, List<ProcessSnapshot> timeline)
+        {
+            gridResult.Rows.Clear();
+            foreach (var p in processes)
+                gridResult.Rows.Add(p.ID, p.CompletionTime, p.TurnaroundTime, p.WaitingTime);
+
+            gridAverage.Rows.Clear();
+            gridAverage.Rows.Add(processes.Average(p => p.TurnaroundTime).ToString("0.##"),
+                                 processes.Average(p => p.WaitingTime).ToString("0.##"));
+
+            txtProcessNumber.Text = processes.Count.ToString();
+
+            lblChartSequence.ForeColor = Color.Black;
+            lblChartSequence.Text = FormatTimeline(timeline);
+
+            lastProcesses = processes;
+            lastTimeline = timeline;
+        }
+
+        private static string FormatTimeline(List<ProcessSnapshot> timeline)
+        {
+            // Example: 0 [P1] 5 [Idle] 6 [P2] 10
+            var sb = new StringBuilder();
+            sb.Append(timeline[0].StartTime);
+            foreach (var block in timeline)
+                sb.Append($" [{block.Id}] {block.EndTime}");
+            return sb.ToString();
+        }
+
+        private string BuildReport()
+        {
+            var sb = new StringBuilder();
+            string mode = UsesPriority ? "With Priority" : "Without Priority";
+            sb.AppendLine($"{SelectedAlgorithm} ({mode}) Implementation File");
+            sb.AppendLine();
+
+            sb.AppendLine("=== Dữ liệu ===");
+            foreach (var p in lastProcesses)
+            {
+                sb.AppendLine($"Process ID: {p.ID}, Arrival Time: {p.ArrivalTime}, " +
+                              $"Burst Time: {p.BurstTime}, Priority: {p.Priority}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("=== Kết Quả ===");
+            foreach (var p in lastProcesses)
+            {
+                sb.AppendLine($"Process ID: {p.ID}, Completion Time: {p.CompletionTime}, " +
+                              $"Turn-around Time: {p.TurnaroundTime}, Waiting Time: {p.WaitingTime}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("=== Trung Bình ===");
+            sb.AppendLine($"Average Turn-around Time: {lastProcesses.Average(p => p.TurnaroundTime):0.##}");
+            sb.AppendLine($"Average Waiting Time: {lastProcesses.Average(p => p.WaitingTime):0.##}");
+
+            sb.AppendLine();
+            sb.AppendLine("=== Gantt Chart ===");
+            sb.AppendLine(FormatTimeline(lastTimeline));
+
+            return sb.ToString();
+        }
+
+        // ---------------- UI helpers ----------------
+
+        private void SetUpGridColumns()
+        {
+            gridData.Columns.Add(ColProcessID, "Process ID");
+            gridData.Columns.Add(ColArrivalTime, "Arrival Time");
+            gridData.Columns.Add(ColBurstTime, "Burst Time");
+            gridData.Columns.Add(ColPriority, "Priority");
+            gridData.Columns[ColProcessID].ReadOnly = true; // Auto-generated
             gridData.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             gridData.AllowUserToAddRows = true;
-            gridData.Columns["ProcessID"].ReadOnly = true; // Process ID is auto-generated, so it should not be editable
-            gridData.Columns["ProcessID"].Visible = true;
-            gridData.Columns["Priority"].Visible = true;
 
-            //gridResult
-            gridResult.Columns.Add("TurnAroundTime","Turn-around Time");
+            gridResult.Columns.Add("ProcessID", "Process ID");
+            gridResult.Columns.Add("CompletionTime", "Completion Time");
+            gridResult.Columns.Add("TurnaroundTime", "Turn-around Time");
             gridResult.Columns.Add("WaitingTime", "Waiting Time");
             gridResult.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            gridResult.ReadOnly = true;
 
-            //gridAverage
             gridAverage.Columns.Add("AvgTAT", "Avg TAT");
             gridAverage.Columns.Add("AvgWT", "Avg WT");
             gridAverage.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            gridResult.ReadOnly = true;
-
         }
 
-        private void defaultUI()
+        private void DefaultUI()
         {
-            comboAlgorithm.SelectedItem = "(FCFS)First Come First Serve";
-            lblQuantumTime.Visible = false;
-            txtQuantumTime.Visible = false;
-            lblSecond.Visible = false;
-            lblPriority.Visible = true;
-
-            radWithoutPriority.Visible = true;
-            radWithPriority.Visible = true;
-            radWithPriority.Checked = true; // Reset to default option
-
+            comboAlgorithm.SelectedItem = AlgoFCFS;
+            radWithoutPriority.Checked = true;
+            txtQuantumTime.Text = "";
             txtProcessNumber.Text = "0";
 
-            setUpPanel(); // Reset the panel for gantt chart/ information display
-
+            lblChartSequence.MaximumSize = new Size(panelGanttChart.Width - 40, 0);
+            Inform("Step 1: Select Algorithm of choice\r\nStep 2: Load data\r\nStep 3: Press Run");
         }
 
-        private void setUpPanel()
+        private void ClearResults()
         {
-            lblChartSequence.Visible = true;
-            lblChartSequence.Text = "Step 1: Select Algorithm of choice\r\nStep 2: Load data\r\nStep 3: Press Run";
-            lblChartSequence.ForeColor = Color.Green;
-
-            lblChartSequence.AutoSize = true;
-            lblChartSequence.MaximumSize = new Size(panelGanttChart.Width - 25, panelGanttChart.Height); // Set maximum width to the panel's width
-
-
-        }
-
-        private void gridViewsReset()
-        {
-            // Xóa dữ liệu trong các bảng
-            gridData.Rows.Clear();
             gridResult.Rows.Clear();
             gridAverage.Rows.Clear();
+            lastProcesses = null;
+            lastTimeline = null;
         }
 
-        private void informError(string text)
+        private void UpdatePriorityColumn()
+        {
+            var column = gridData.Columns[ColPriority];
+            if (column != null)
+                column.Visible = UsesPriority;
+        }
+
+        /// <summary>Process IDs follow the row order: P1, P2, ...</summary>
+        private void RenumberProcesses()
+        {
+            foreach (DataGridViewRow row in gridData.Rows)
+            {
+                if (row.IsNewRow) continue;
+
+                string id = $"P{row.Index + 1}";
+                if (!Equals(row.Cells[ColProcessID].Value, id))
+                    row.Cells[ColProcessID].Value = id;
+            }
+        }
+
+        private void ShowError(string message, string status)
+        {
+            MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            InformError(status);
+        }
+
+        private void InformError(string text)
         {
             lblChartSequence.ForeColor = Color.Red;
             lblChartSequence.Text = text;
-            lblChartSequence.AutoSize = true;
         }
 
-        private void inform(string text)
+        private void Inform(string text)
         {
-            lblChartSequence.Text = text;
-            lblChartSequence.AutoSize = true;
             lblChartSequence.ForeColor = Color.Green;
-        }
-
-        private void ganttChartShow(List<Process> process)
-        {
-            // Clear previous gantt chart
-            panelGanttChart.Invalidate(); // Refresh the panel
-            lblChartSequence.Text = ""; // Clear the previous gantt chart sequence
-
-            // Display the gantt chart sequence from the processes
-            foreach (var p in process)
-            {
-                lblChartSequence.Text += $"{p.ID}({p.StartTime} - {p.CompletionTime}) -> ";
-            }
-            lblChartSequence.Text += "Finish";
-
-        }
-
-        private void ganttChartShow(List<ProcessSnapshot> progress)
-        {
-            // Clear previous gantt chart
-            panelGanttChart.Invalidate(); // Refresh the panel
-            lblChartSequence.Text = ""; // Clear the previous gantt chart sequence
-
-            // Display the gantt chart sequence from the processes
-            lblChartSequence.Text = $"{progress[0].Id} {progress[0].StartTime} --- ";
-            for (int i= 1; i < progress.Count; i++)
-            {
-                lblChartSequence.Text += $"{progress[i].StartTime} {progress[i].Id} --- ";
-                //      (P1) 0 -- 5 (P2) -- 10 (P3) -- 14
-            }
-            lblChartSequence.Text += $"{progress[progress.Count - 1].EndTime}";
+            lblChartSequence.Text = text;
         }
     }
 }

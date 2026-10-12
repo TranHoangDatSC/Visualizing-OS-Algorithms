@@ -82,6 +82,7 @@
             // 
             // comboAlgorithm
             // 
+            this.comboAlgorithm.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.comboAlgorithm.Font = new System.Drawing.Font("Times New Roman", 14.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.comboAlgorithm.FormattingEnabled = true;
             this.comboAlgorithm.Location = new System.Drawing.Point(393, 20);
@@ -105,6 +106,8 @@
             // 
             // gridResult
             // 
+            this.gridResult.AllowUserToAddRows = false;
+            this.gridResult.AllowUserToDeleteRows = false;
             this.gridResult.BackgroundColor = System.Drawing.Color.Linen;
             this.gridResult.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.gridResult.Location = new System.Drawing.Point(906, 209);
@@ -134,6 +137,7 @@
             this.txtProcessNumber.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.txtProcessNumber.MaxLength = 10;
             this.txtProcessNumber.Name = "txtProcessNumber";
+            this.txtProcessNumber.ReadOnly = true;
             this.txtProcessNumber.Size = new System.Drawing.Size(142, 40);
             this.txtProcessNumber.TabIndex = 6;
             this.txtProcessNumber.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
@@ -206,6 +210,7 @@
             // 
             // panelGanttChart
             // 
+            this.panelGanttChart.AutoScroll = true;
             this.panelGanttChart.BackColor = System.Drawing.SystemColors.ControlLight;
             this.panelGanttChart.Controls.Add(this.lblChartSequence);
             this.panelGanttChart.Location = new System.Drawing.Point(13, 716);
@@ -229,6 +234,8 @@
             // 
             // gridAverage
             // 
+            this.gridAverage.AllowUserToAddRows = false;
+            this.gridAverage.AllowUserToDeleteRows = false;
             this.gridAverage.BackgroundColor = System.Drawing.Color.Linen;
             this.gridAverage.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.gridAverage.Location = new System.Drawing.Point(906, 716);
@@ -342,7 +349,7 @@
             this.Controls.Add(this.pictureBox);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "FormCPUScheduling";
-            this.Text = "FormCPUScheduling";
+            this.Text = "CPU Scheduling";
             this.Load += new System.EventHandler(this.FormCPUScheduling_Load);
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.gridData)).EndInit();
