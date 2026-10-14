@@ -1,244 +1,144 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Documents;
 
 namespace Project_OP_Final.Class
 {
+    /// <summary>
+    /// Page replacement algorithms. After a Run method, <see cref="FrameStates"/>[i] holds the frame contents
+    /// after reference i and <see cref="PageFaults"/>[i] tells whether reference i caused a page fault.
+    /// </summary>
     internal class PageReplacement
     {
-        public List<int> referenceString { get; set; }
-        public int frameCount { get; set; }
-        public List<List<int>> frameStates { get; set; }
-        public int faults { get; set; }
-        public List<bool> pageFaults { get; set; }
-        public List<List<bool>> bitsStates { get; set; }
+        public List<int> ReferenceString { get; }
+        public int FrameCount { get; }
 
-        public void OPTAlgorithmRun()
+        public List<List<int>> FrameStates { get; private set; }
+        public List<bool> PageFaults { get; private set; }
+        public List<List<bool>> BitStates { get; private set; } // Reference bits, Clock algorithm only
+
+        public int Faults => PageFaults.Count(f => f);
+
+        public PageReplacement(List<int> referenceString, int frameCount)
         {
-            frameStates = new List<List<int>>();
-            int faults = 0;
-            List<int> frame = new List<int>();
-            pageFaults = Enumerable.Repeat(false, referenceString.Count).ToList();
-
-            for (int i = 0; i < referenceString.Count; i++)
-            {
-                if (!frame.Contains(referenceString[i]))
-                {
-                    if (frame.Count < frameCount)
-                    {
-                        frame.Add(referenceString[i]);
-                    }
-                    else
-                    {
-                        int idxFurthestReference = 0;
-                        int idxReplacedPage = 0;
-                        bool foundFurthestReference = false;
-                        for (int j = 0; j < frame.Count; j++)
-                        {
-                            bool foundReference = false;
-                            for (int k = i + 1; k < referenceString.Count; k++)
-                            {
-                                if (frame[j] == referenceString[k])
-                                {
-                                    if (idxFurthestReference < k - i)
-                                    {
-                                        idxFurthestReference = k - i;
-                                        idxReplacedPage = j;
-                                    }
-                                    foundReference = true;
-                                    break;
-                                }
-                            }
-                            if (foundReference == false)
-                            {
-                                frame[j] = referenceString[i];
-                                faults++;
-                                foundFurthestReference = true;
-                                break;
-                            }
-                        }
-                        if (foundFurthestReference == false)
-                        {
-                            frame[idxReplacedPage] = referenceString[i];
-                            faults++;
-                        }
-                        pageFaults[i] = true;
-                    }
-                }
-                List<int> copyFrames = new List<int>();
-                foreach (int j in frame)
-                {
-                    copyFrames.Add(j);
-                }
-                frameStates.Add(copyFrames);
-            }
-            this.faults = faults;
+            ReferenceString = referenceString;
+            FrameCount = frameCount;
         }
 
-        public void LRUAlgorithmRun()
+        /// <summary>Optimal: replace the page that will not be used for the longest time.</summary>
+        public void RunOPT()
         {
-            frameStates = new List<List<int>>();
-            int faults = 0;
-            List<int> frame = new List<int>();
-            pageFaults = Enumerable.Repeat(false, referenceString.Count).ToList();
-
-            for (int i = 0; i < referenceString.Count; i++)
-            {
-                if (!frame.Contains(referenceString[i]))
-                {
-                    if (frame.Count < frameCount)
-                    {
-                        frame.Add(referenceString[i]);
-                    }
-                    else
-                    {
-                        int idxLongestUnreferenced = 0;
-                        int idxReplacedPage = 0;
-                        bool foundLongestUnreferenced = false;
-                        for (int j = 0; j < frame.Count; j++)
-                        {
-                            bool foundReference = false;
-                            for (int k = i - 1; k >= 0; k--)
-                            {
-                                if (frame[j] == referenceString[k])
-                                {
-                                    if (idxLongestUnreferenced < i - k)
-                                    {
-                                        idxLongestUnreferenced = i - k;
-                                        idxReplacedPage = j;
-                                    }
-                                    foundReference = true;
-                                    break;
-                                }
-                            }
-                            if (foundReference == false)
-                            {
-                                frame[j] = referenceString[i];
-                                faults++;
-                                foundLongestUnreferenced = true;
-                                break;
-                            }
-                        }
-                        if (foundLongestUnreferenced == false)
-                        {
-                            frame[idxReplacedPage] = referenceString[i];
-                            faults++;
-                        }
-                        pageFaults[i] = true;
-                    }
-                }
-                List<int> copyFrames = new List<int>();
-                foreach (int j in frame)
-                {
-                    copyFrames.Add(j);
-                }
-                frameStates.Add(copyFrames);
-            }
-            this.faults = faults;
+            Run((frame, i) => IndexOfMax(frame, page => NextUse(page, i)));
         }
 
-        public void FIFOAlgorithmRun()
+        /// <summary>Least Recently Used: replace the page that has not been used for the longest time.</summary>
+        public void RunLRU()
         {
-            frameStates = new List<List<int>>();
-            int faults = 0;
-            List<int> frame = new List<int>();
-            pageFaults = Enumerable.Repeat(false, referenceString.Count).ToList();
-            int turnoverIndex = 0;
-
-            for (int i = 0; i < referenceString.Count; i++)
-            {
-                if (!frame.Contains(referenceString[i]))
-                {
-                    if (frame.Count < frameCount)
-                    {
-                        frame.Add(referenceString[i]);
-                    }
-                    else
-                    {
-                        frame[turnoverIndex] = referenceString[i];
-                        turnoverIndex++;
-                        if (turnoverIndex == frameCount)
-                        {
-                            turnoverIndex = 0;
-                        }
-                        pageFaults[i] = true;
-                        faults++;
-                    }
-                }
-                List<int> copyFrames = new List<int>();
-                foreach (int j in frame)
-                {
-                    copyFrames.Add(j);
-                }
-                frameStates.Add(copyFrames);
-            }
-            this.faults = faults;
+            Run((frame, i) => IndexOfMax(frame, page => i - LastUse(page, i)));
         }
 
-        public void ClockAlgorithmRun()
+        /// <summary>First-In First-Out: replace the oldest loaded page.</summary>
+        public void RunFIFO()
         {
-            frameStates = new List<List<int>>();
-            int faults = 0;
-            List<int> frame = new List<int>();
-            pageFaults = Enumerable.Repeat(false, referenceString.Count).ToList();
-            List<bool> bits = Enumerable.Repeat(false, frameCount).ToList();
-            int turnoverIndex = 0;
-            bitsStates = new List<List<bool>>();
-
-            for (int i = 0; i < referenceString.Count; i++)
+            int oldest = 0;
+            Run((frame, i) =>
             {
-                if (!frame.Contains(referenceString[i]))
+                int victim = oldest;
+                oldest = (oldest + 1) % FrameCount;
+                return victim;
+            });
+        }
+
+        /// <summary>Clock (second chance): skip pages whose reference bit is set, clearing the bit.</summary>
+        public void RunClock()
+        {
+            var bits = new List<bool>();
+            int hand = 0;
+            BitStates = new List<List<bool>>();
+
+            Run(
+                selectVictim: (frame, i) =>
                 {
-                    if (frame.Count < frameCount)
+                    while (bits[hand])
                     {
-                        frame.Add(referenceString[i]);
-                        bits[turnoverIndex] = true;
-                        turnoverIndex++;
-                        if (turnoverIndex == frameCount) turnoverIndex = 0;
+                        bits[hand] = false;
+                        hand = (hand + 1) % FrameCount;
+                    }
+                    int victim = hand;
+                    hand = (hand + 1) % FrameCount;
+                    return victim;
+                },
+                onAccess: slot =>
+                {
+                    if (slot == bits.Count) bits.Add(true);
+                    else bits[slot] = true;
+                },
+                afterStep: () => BitStates.Add(new List<bool>(bits)));
+        }
+
+        /// <summary>
+        /// Common simulation loop. <paramref name="selectVictim"/> returns the frame slot to replace
+        /// when all frames are full; <paramref name="onAccess"/> is called with the slot that holds the page.
+        /// </summary>
+        private void Run(Func<List<int>, int, int> selectVictim,
+                         Action<int> onAccess = null,
+                         Action afterStep = null)
+        {
+            var frame = new List<int>();
+            FrameStates = new List<List<int>>();
+            PageFaults = new List<bool>();
+
+            for (int i = 0; i < ReferenceString.Count; i++)
+            {
+                int page = ReferenceString[i];
+                int slot = frame.IndexOf(page);
+                bool fault = slot < 0;
+
+                if (fault)
+                {
+                    if (frame.Count < FrameCount)
+                    {
+                        // Free frame available: compulsory miss, still a page fault
+                        frame.Add(page);
+                        slot = frame.Count - 1;
                     }
                     else
                     {
-                        while (bits[turnoverIndex])
-                        {
-                            bits[turnoverIndex] = false;
-                            turnoverIndex++;
-                            if (turnoverIndex == frameCount) turnoverIndex = 0;
-                        }
-                        frame[turnoverIndex] = referenceString[i];
-                        bits[turnoverIndex] = true;
-                        turnoverIndex++;
-                        if (turnoverIndex == frameCount) turnoverIndex = 0;
-                        pageFaults[i] = true;
-                        faults++;
+                        slot = selectVictim(frame, i);
+                        frame[slot] = page;
                     }
                 }
-                else
-                {
-                    bool found = false;
-                    for (int j = 0; j < frame.Count; j++)
-                    {
-                        if (frame[j] == referenceString[i])
-                        {
-                            bits[j] = true;
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                List<int> copyFrames = new List<int>();
-                foreach (int j in frame)
-                {
-                    copyFrames.Add(j);
-                }
-                frameStates.Add(copyFrames);
-                bitsStates.Add(new List<bool>(bits));
+
+                onAccess?.Invoke(slot);
+                PageFaults.Add(fault);
+                FrameStates.Add(new List<int>(frame));
+                afterStep?.Invoke();
             }
-            this.faults = faults;
+        }
+
+        /// <summary>Index of the next reference to <paramref name="page"/> after position <paramref name="current"/> (int.MaxValue if never).</summary>
+        private int NextUse(int page, int current)
+        {
+            int next = ReferenceString.IndexOf(page, current + 1);
+            return next < 0 ? int.MaxValue : next;
+        }
+
+        /// <summary>Index of the last reference to <paramref name="page"/> before position <paramref name="current"/>.</summary>
+        private int LastUse(int page, int current)
+        {
+            return ReferenceString.LastIndexOf(page, current - 1);
+        }
+
+        /// <summary>Returns the first slot whose page has the largest key.</summary>
+        private static int IndexOfMax(List<int> frame, Func<int, int> key)
+        {
+            int best = 0;
+            for (int slot = 1; slot < frame.Count; slot++)
+            {
+                if (key(frame[slot]) > key(frame[best]))
+                    best = slot;
+            }
+            return best;
         }
     }
 }
