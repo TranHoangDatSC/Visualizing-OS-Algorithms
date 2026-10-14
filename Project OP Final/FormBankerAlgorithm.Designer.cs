@@ -157,6 +157,7 @@
             // 
             // cbProcessRequest
             // 
+            this.cbProcessRequest.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cbProcessRequest.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.cbProcessRequest.FormattingEnabled = true;
             this.cbProcessRequest.Location = new System.Drawing.Point(548, 513);
@@ -202,17 +203,37 @@
             // 
             this.nudProcesses.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.nudProcesses.Location = new System.Drawing.Point(259, 75);
+            this.nudProcesses.Minimum = new decimal(new int[] {
+            1,
+            0,
+            0,
+            0});
             this.nudProcesses.Name = "nudProcesses";
             this.nudProcesses.Size = new System.Drawing.Size(178, 30);
             this.nudProcesses.TabIndex = 22;
+            this.nudProcesses.Value = new decimal(new int[] {
+            5,
+            0,
+            0,
+            0});
             // 
             // nudResources
             // 
             this.nudResources.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.nudResources.Location = new System.Drawing.Point(469, 75);
+            this.nudResources.Minimum = new decimal(new int[] {
+            1,
+            0,
+            0,
+            0});
             this.nudResources.Name = "nudResources";
             this.nudResources.Size = new System.Drawing.Size(178, 30);
             this.nudResources.TabIndex = 23;
+            this.nudResources.Value = new decimal(new int[] {
+            3,
+            0,
+            0,
+            0});
             // 
             // labelSequence
             // 
@@ -447,7 +468,7 @@
             this.Controls.Add(this.label2);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "FormBankerAlgorithm";
-            this.Text = "FormBankerAlgorithm";
+            this.Text = "Banker's Algorithm";
             this.flowPanelRequest.ResumeLayout(false);
             this.flowPanelRequest.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudProcesses)).EndInit();
