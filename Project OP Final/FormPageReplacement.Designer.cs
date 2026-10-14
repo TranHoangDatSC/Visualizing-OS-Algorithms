@@ -76,6 +76,7 @@
             // 
             // cb_Algorithm
             // 
+            this.cb_Algorithm.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cb_Algorithm.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F);
             this.cb_Algorithm.FormattingEnabled = true;
             this.cb_Algorithm.Location = new System.Drawing.Point(797, 57);
@@ -126,9 +127,24 @@
             this.nud_Frame.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F);
             this.nud_Frame.Location = new System.Drawing.Point(484, 57);
             this.nud_Frame.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.nud_Frame.Maximum = new decimal(new int[] {
+            10,
+            0,
+            0,
+            0});
+            this.nud_Frame.Minimum = new decimal(new int[] {
+            1,
+            0,
+            0,
+            0});
             this.nud_Frame.Name = "nud_Frame";
             this.nud_Frame.Size = new System.Drawing.Size(154, 26);
             this.nud_Frame.TabIndex = 6;
+            this.nud_Frame.Value = new decimal(new int[] {
+            3,
+            0,
+            0,
+            0});
             // 
             // txt_Page_reference_string
             // 
@@ -256,7 +272,7 @@
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.Name = "FormPageReplacement";
-            this.Text = "FormPageReplacement";
+            this.Text = "Page Replacement";
             this.Load += new System.EventHandler(this.FormPageReplacement_Load);
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.dgv_Result)).EndInit();
