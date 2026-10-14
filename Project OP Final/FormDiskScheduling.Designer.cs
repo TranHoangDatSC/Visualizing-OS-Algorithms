@@ -86,6 +86,7 @@
             // cbSelectAlgorithm
             // 
             this.cbSelectAlgorithm.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.cbSelectAlgorithm.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cbSelectAlgorithm.FormattingEnabled = true;
             this.cbSelectAlgorithm.Location = new System.Drawing.Point(380, 68);
             this.cbSelectAlgorithm.Name = "cbSelectAlgorithm";
@@ -259,6 +260,7 @@
             this.txtTotalHeadMovement.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F);
             this.txtTotalHeadMovement.Location = new System.Drawing.Point(1203, 499);
             this.txtTotalHeadMovement.Name = "txtTotalHeadMovement";
+            this.txtTotalHeadMovement.ReadOnly = true;
             this.txtTotalHeadMovement.Size = new System.Drawing.Size(322, 35);
             this.txtTotalHeadMovement.TabIndex = 22;
             // 
@@ -313,7 +315,6 @@
             this.radRight.TabStop = true;
             this.radRight.Text = "Right";
             this.radRight.UseVisualStyleBackColor = true;
-            this.radRight.CheckedChanged += new System.EventHandler(this.radRight_CheckedChanged);
             // 
             // radLeft
             // 
@@ -327,7 +328,6 @@
             this.radLeft.TabStop = true;
             this.radLeft.Text = "Left";
             this.radLeft.UseVisualStyleBackColor = true;
-            this.radLeft.CheckedChanged += new System.EventHandler(this.radLeft_CheckedChanged);
             // 
             // FormDiskScheduling
             // 
@@ -357,7 +357,7 @@
             this.Controls.Add(this.label1);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "FormDiskScheduling";
-            this.Text = "FormDiskScheduling";
+            this.Text = "Disk Scheduling";
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             this.panel1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.dgvAlgorithm)).EndInit();

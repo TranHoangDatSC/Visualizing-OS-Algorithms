@@ -1,22 +1,18 @@
 ﻿using Project_OP_Final.Class;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.IO;
 
 namespace Project_OP_Final
 {
     public partial class FormDiskScheduling : Form
     {
-        private DiskScheduling diskScheduling;
-        private string selectedAlgorithm = "";
-        private Dictionary<string, string> algorithmDescriptions = new Dictionary<string, string>()
+        private static readonly char[] Separators = { ',', ' ', '\t', '\r', '\n' };
+
+        private readonly Dictionary<string, string> algorithmDescriptions = new Dictionary<string, string>
         {
             { "FCFS", "First-Come, First-Served (FCFS)" },
             { "SSTF", "Shortest Seek Time First (SSTF)" },
@@ -29,218 +25,82 @@ namespace Project_OP_Final
         public FormDiskScheduling()
         {
             InitializeComponent();
-            InitializeAlgorithmComboBox();
             SetupDataGridView();
-            UpdateDiskSizeTextBoxState();
-            radRight.Visible = false;
-            radLeft.Visible = false;
-            //labelAlgorithms.Visible = false;
-            //labelSteps.Visible = false;
-            //labelSteps.ForeColor = Color.MediumBlue;
-            //labelSteps.Font = new Font("Times New Roman", 12F, FontStyle.Bold);
-        }
-        private void InitializeAlgorithmComboBox()
-        {
-            cbSelectAlgorithm.Items.Clear();
+
             cbSelectAlgorithm.Items.AddRange(algorithmDescriptions.Keys.ToArray());
-            cbSelectAlgorithm.SelectedIndex = 0;
             cbSelectAlgorithm.SelectedIndexChanged += cbSelectAlgorithm_SelectedIndexChanged;
-            selectedAlgorithm = cbSelectAlgorithm.SelectedItem.ToString();
+            cbSelectAlgorithm.SelectedIndex = 0;
         }
+
+        private string SelectedAlgorithm => cbSelectAlgorithm.SelectedItem?.ToString() ?? "";
+
+        private bool NeedsDiskSize => SelectedAlgorithm == "SCAN" || SelectedAlgorithm == "C-SCAN";
+
+        private bool NeedsDirection => NeedsDiskSize || SelectedAlgorithm == "LOOK" || SelectedAlgorithm == "C-LOOK";
+
+        // ---------------- Event handlers ----------------
+
         private void cbSelectAlgorithm_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (cbSelectAlgorithm.SelectedItem != null)
-            {
-                selectedAlgorithm = cbSelectAlgorithm.SelectedItem.ToString();
-                UpdateDiskSizeTextBoxState();
+            labelAlgorithms.Text = algorithmDescriptions[SelectedAlgorithm];
 
-                if (algorithmDescriptions.ContainsKey(selectedAlgorithm))
-                {
-                    labelAlgorithms.Text = algorithmDescriptions[selectedAlgorithm];
-                    labelAlgorithms.Visible = true;
-                }
-            }
-        }
-        private void SetupDataGridView()
-        {
-            dgvAlgorithm.Rows.Clear();
-            dgvAlgorithm.Columns.Clear();
-            dgvAlgorithm.Columns.Add("From", "From");
-            dgvAlgorithm.Columns.Add("To", "To");
-            dgvAlgorithm.Columns.Add("Distance", "Distance");
-            dgvAlgorithm.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        }
-
-        private void UpdateDiskSizeTextBoxState()
-        {
-            if (selectedAlgorithm == "SCAN" || selectedAlgorithm == "C-SCAN")
-            {
-                txtDiskSize.Enabled = true;
-                radLeft.Visible = true;
-                radRight.Visible = true;
-                radRight.Checked = true;
-                radLeft.Checked = false;
-            }
-            else
-            {
-                txtDiskSize.Enabled = false;
+            txtDiskSize.Enabled = NeedsDiskSize;
+            if (!NeedsDiskSize)
                 txtDiskSize.Text = "";
-                radLeft.Visible = false;
-                radRight.Visible = false;
-            }
+
+            radLeft.Visible = NeedsDirection;
+            radRight.Visible = NeedsDirection;
+            if (NeedsDirection && !radLeft.Checked)
+                radRight.Checked = true;
         }
 
-        private void AddStepToGrid(int from, int to, int distance)
-        {
-            dgvAlgorithm.Rows.Add(from, to, distance);
-        }
         private void btnRun_Click(object sender, EventArgs e)
         {
             dgvAlgorithm.Rows.Clear();
+            txtTotalHeadMovement.Clear();
             labelSteps.Visible = false;
-            labelSteps.Text = "";
 
-            try
+            if (!TryReadInput(out List<int> requests, out int head, out int diskSize))
+                return;
+
+            Direction direction = radLeft.Checked ? Direction.Left : Direction.Right;
+            List<SeekStep> steps;
+
+            switch (SelectedAlgorithm)
             {
-                if (string.IsNullOrWhiteSpace(txtRequestQueue.Text))
-                {
-                    MessageBox.Show("Please enter at least one request in the queue!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-
-                // Parse requests from textbox
-                int[] requests = txtRequestQueue.Text.Split(',')
-                                        .Select(s => int.Parse(s.Trim()))
-                                        .ToArray();
-
-                if (requests.Length == 0)
-                {
-                    MessageBox.Show("Request queue cannot be empty!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-
-                if (!int.TryParse(txtHeadPosition.Text.Trim(), out int head))
-                {
-                    MessageBox.Show("Please enter a valid initial head position!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-
-                int diskSize = 0;
-                if (txtDiskSize.Enabled)
-                {
-                    if (!int.TryParse(txtDiskSize.Text.Trim(), out diskSize))
-                    {
-                        MessageBox.Show("Please enter a valid disk size!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-                }
-
-                List<(int from, int to, int move)> steps = new List<(int from, int to, int move)>(); ;
-                int total = 0;
-
-                switch (selectedAlgorithm)
-                {
-                    case "FCFS":
-                        total = DiskScheduling.FCFS(requests, head, out steps);
-                        break;
-                    case "SSTF":
-                        total = DiskScheduling.SSTF(requests, head, out steps);
-                        break;
-                    case "SCAN":
-                        if (radRight.Checked == true)
-                        {
-                            radLeft.Checked = false;
-                            total = DiskScheduling.SCAN_RIGHT(requests, head, diskSize, Direction.Left, out steps);
-                        }
-                        else if (radLeft.Checked == true)
-                        {
-                            radRight.Checked = false;
-                            total = DiskScheduling.SCAN_LEFT(requests, head, diskSize, Direction.Left, out steps);
-                        }
-                        break;
-                    case "C-SCAN":
-                        if (radRight.Checked == true)
-                        {
-                            radLeft.Checked = false;
-                            total = DiskScheduling.CSCAN_RIGHT(requests, head, diskSize, out steps);
-                        }
-                        else if (radLeft.Checked == true)
-                        {
-                            radRight.Checked = false;
-                            total = DiskScheduling.CSCAN_LEFT(requests, head, diskSize, out steps);
-                        }
-                        break;
-                    case "LOOK":
-                        total = DiskScheduling.LOOK(requests, head, Direction.Left, out steps);
-                        break;
-                    case "C-LOOK":
-                        total = DiskScheduling.CLOOK(requests, head, out steps);
-                        break;
-                    default:
-                        steps = new List<(int from, int to, int move)>();
-                        break;
-                }
-
-                // Add steps to grid
-                foreach (var step in steps)
-                {
-                    AddStepToGrid(step.from, step.to, step.move);
-                }
-
-                txtTotalHeadMovement.Text = total.ToString();
-
-                // Show steps as multiline text in labelSteps
-                if (steps.Count > 0)
-                {
-                    StringBuilder sb = new StringBuilder();
-                    foreach (var step in steps)
-                    {
-                        sb.AppendLine($"From {step.from} to {step.to}, Distance: {step.move}");
-                    }
-                    labelSteps.Text = sb.ToString();
-                    labelSteps.Visible = true;
-                }
-                else
-                {
-                    labelSteps.Visible = false;
-                }
+                case "FCFS": steps = DiskScheduling.FCFS(requests, head); break;
+                case "SSTF": steps = DiskScheduling.SSTF(requests, head); break;
+                case "SCAN": steps = DiskScheduling.SCAN(requests, head, diskSize, direction); break;
+                case "C-SCAN": steps = DiskScheduling.CSCAN(requests, head, diskSize, direction); break;
+                case "LOOK": steps = DiskScheduling.LOOK(requests, head, direction); break;
+                case "C-LOOK": steps = DiskScheduling.CLOOK(requests, head, direction); break;
+                default: return;
             }
-            catch (FormatException)
+
+            var sb = new StringBuilder();
+            foreach (var step in steps)
             {
-                MessageBox.Show("Please enter valid numeric values separated by commas in request queue.", "Input Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                dgvAlgorithm.Rows.Add(step.From, step.To, step.Distance);
+                sb.AppendLine($"From {step.From} to {step.To}, Distance: {step.Distance}");
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error: " + ex.Message, "Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+
+            txtTotalHeadMovement.Text = DiskScheduling.TotalMovement(steps).ToString();
+            labelSteps.Text = sb.ToString();
+            labelSteps.Visible = steps.Count > 0;
         }
 
         private void btnLoadFromFile_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(selectedAlgorithm))
-            {
-                MessageBox.Show("Please select an algorithm first!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            string folderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-            string fileName = Path.Combine(folderPath, $"DiskScheduling.txt");
-
-            if (!File.Exists(fileName))
-            {
-                MessageBox.Show($"File '{fileName}' not found.\nExpected at: {fileName}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
+            string filePath = DataFile.PickFileToOpen("DiskScheduling.txt");
+            if (filePath == null) return;
 
             try
             {
-                string content = File.ReadAllText(fileName);
-                txtRequestQueue.Text = content;
-                MessageBox.Show($"Loaded from {fileName}", "Loaded", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                txtRequestQueue.Text = File.ReadAllText(filePath).Trim();
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Failed to read file:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowError("Failed to read file:\n" + ex.Message);
             }
         }
 
@@ -252,30 +112,17 @@ namespace Project_OP_Final
                 return;
             }
 
-            if (string.IsNullOrEmpty(selectedAlgorithm))
-            {
-                MessageBox.Show("Please select an algorithm first!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            string folderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-
-            // Tạo thư mục nếu chưa tồn tại
-            if (!Directory.Exists(folderPath))
-            {
-                Directory.CreateDirectory(folderPath);
-            }
-
-            string fileName = Path.Combine(folderPath, $"{selectedAlgorithm}_DiskScheduling.txt");
+            string filePath = DataFile.PickFileToSave("DiskScheduling.txt");
+            if (filePath == null) return;
 
             try
             {
-                File.WriteAllText(fileName, txtRequestQueue.Text);
-                MessageBox.Show($"Saved to {fileName}", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                File.WriteAllText(filePath, txtRequestQueue.Text.Trim());
+                MessageBox.Show($"Saved to {filePath}", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Failed to save file:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowError("Failed to save file:\n" + ex.Message);
             }
         }
 
@@ -287,32 +134,68 @@ namespace Project_OP_Final
             txtTotalHeadMovement.Clear();
             dgvAlgorithm.Rows.Clear();
             labelSteps.Visible = false;
+            cbSelectAlgorithm.SelectedIndex = 0;
         }
 
-        private void radRight_CheckedChanged(object sender, EventArgs e)
-        {
-            bool showDirection = selectedAlgorithm == "SCAN" || selectedAlgorithm == "C-SCAN";
-            radLeft.Visible = showDirection;
-            radRight.Visible = showDirection;
+        // ---------------- Helpers ----------------
 
-            if (!showDirection)
-            {
-                radLeft.Checked = false;
-                radRight.Checked = false;
-            }
+        private void SetupDataGridView()
+        {
+            dgvAlgorithm.Rows.Clear();
+            dgvAlgorithm.Columns.Clear();
+            dgvAlgorithm.Columns.Add("From", "From");
+            dgvAlgorithm.Columns.Add("To", "To");
+            dgvAlgorithm.Columns.Add("Distance", "Distance");
+            dgvAlgorithm.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            dgvAlgorithm.AllowUserToAddRows = false;
+            dgvAlgorithm.ReadOnly = true;
         }
 
-        private void radLeft_CheckedChanged(object sender, EventArgs e)
+        private bool TryReadInput(out List<int> requests, out int head, out int diskSize)
         {
-            bool showDirection = selectedAlgorithm == "SCAN" || selectedAlgorithm == "C-SCAN";
-            radLeft.Visible = showDirection;
-            radRight.Visible = showDirection;
+            requests = new List<int>();
+            head = 0;
+            diskSize = 0;
 
-            if (!showDirection)
+            foreach (string token in txtRequestQueue.Text.Split(Separators, StringSplitOptions.RemoveEmptyEntries))
             {
-                radLeft.Checked = false;
-                radRight.Checked = false;
+                if (!int.TryParse(token, out int request) || request < 0)
+                {
+                    ShowError($"Invalid request \"{token}\". Please enter non-negative integers separated by commas.");
+                    return false;
+                }
+                requests.Add(request);
             }
+
+            if (requests.Count == 0)
+            {
+                ShowError("Please enter at least one request in the queue!");
+                return false;
+            }
+
+            if (!int.TryParse(txtHeadPosition.Text.Trim(), out head) || head < 0)
+            {
+                ShowError("Please enter a valid initial head position (integer ≥ 0)!");
+                return false;
+            }
+
+            if (NeedsDiskSize)
+            {
+                int maxCylinder = Math.Max(head, requests.Max());
+                if (!int.TryParse(txtDiskSize.Text.Trim(), out diskSize) || diskSize <= maxCylinder)
+                {
+                    ShowError($"Please enter a valid disk size (greater than {maxCylinder}).\n" +
+                              "Cylinders are numbered from 0 to Disk Size - 1.");
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static void ShowError(string message)
+        {
+            MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }
