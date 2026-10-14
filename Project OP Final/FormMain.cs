@@ -1,74 +1,72 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Project_OP_Final
 {
     public partial class FormMain : Form
     {
+        private const string HomeTitle = "OPERATING SYSTEM ALGORITHMS";
+
+        private Form currentChild;
+
         public FormMain()
         {
             InitializeComponent();
-            this.Text = "Operating System Algorithms Simulator";
         }
 
-        private Form FormChild;
-        private void OpenFormChild(Form childForm)
+        /// <summary>Shows <paramref name="childForm"/> inside the main panel, closing the previous one.</summary>
+        private void OpenChildForm(Form childForm, string title)
         {
-            if(FormChild != null)
-            {
-                FormChild.Close();
-            }
-            FormChild = childForm;
+            CloseChildForm();
+
+            currentChild = childForm;
             childForm.TopLevel = false;
             childForm.FormBorderStyle = FormBorderStyle.None;
             childForm.Dock = DockStyle.Fill;
             MainPanel.Controls.Add(childForm);
-            MainPanel.Tag = childForm;
             childForm.BringToFront();
             childForm.Show();
+
+            labelAlgorithms.Text = title;
+        }
+
+        private void CloseChildForm()
+        {
+            if (currentChild == null) return;
+
+            currentChild.Close();
+            currentChild = null;
+            labelAlgorithms.Text = HomeTitle;
         }
 
         private void btnHome_Click(object sender, EventArgs e)
         {
-            if (FormChild != null)
-                FormChild.Close();
+            CloseChildForm();
         }
 
         private void btnBankerAlgorithm_Click(object sender, EventArgs e)
         {
-            OpenFormChild(new FormBankerAlgorithm());
-            labelAlgorithms.Text = "Banker Algorithm";
+            OpenChildForm(new FormBankerAlgorithm(), "Banker Algorithm");
         }
 
         private void btnCPUScheduling_Click(object sender, EventArgs e)
         {
-            OpenFormChild(new FormCPUScheduling());
-            labelAlgorithms.Text = "CPU Scheduling Algorithm";
+            OpenChildForm(new FormCPUScheduling(), "CPU Scheduling Algorithm");
         }
 
         private void btnPageReplacement_Click(object sender, EventArgs e)
         {
-            OpenFormChild(new FormPageReplacement());
-            labelAlgorithms.Text = "Page Replacement Algorithm";
+            OpenChildForm(new FormPageReplacement(), "Page Replacement Algorithm");
         }
 
         private void btnDiskScheduling_Click(object sender, EventArgs e)
         {
-            OpenFormChild(new FormDiskScheduling());
-            labelAlgorithms.Text = "Disk Scheduling Algorithm";
+            OpenChildForm(new FormDiskScheduling(), "Disk Scheduling Algorithm");
         }
 
         private void btnExit_Click(object sender, EventArgs e)
         {
-            this.Close();
+            Close();
         }
     }
 }
