@@ -1,260 +1,163 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Project_OP_Final.Class
 {
     public enum Direction { Left, Right }
-    public class DiskScheduling
+
+    /// <summary>One movement of the disk head.</summary>
+    public struct SeekStep
     {
-        public static int FCFS(int[] requests, int head, out List<(int from, int to, int move)> steps)
+        public int From { get; }
+        public int To { get; }
+        public int Distance => Math.Abs(To - From);
+
+        public SeekStep(int from, int to)
         {
-            steps = new List<(int, int, int)>();
-            int total = 0;
+            From = from;
+            To = to;
+        }
+    }
+
+    /// <summary>
+    /// Disk scheduling algorithms. Each one returns the list of head movements;
+    /// the total head movement is <see cref="TotalMovement"/>.
+    /// </summary>
+    public static class DiskScheduling
+    {
+        public static int TotalMovement(IEnumerable<SeekStep> steps) => steps.Sum(s => s.Distance);
+
+        public static List<SeekStep> FCFS(IEnumerable<int> requests, int head)
+        {
+            var path = new HeadPath(head);
             foreach (int r in requests)
-            {
-                int move = Math.Abs(head - r);
-                steps.Add((head, r, move));
-                total += move;
-                head = r;
-            }
-            return total;
+                path.Serve(r);
+            return path.Steps;
         }
-        public static int SSTF(int[] requests, int head, out List<(int from, int to, int move)> steps)
-        {
-            steps = new List<(int, int, int)>();
-            List<int> req = requests.ToList();
-            int total = 0;
 
-            while (req.Count > 0)
+        public static List<SeekStep> SSTF(IEnumerable<int> requests, int head)
+        {
+            var path = new HeadPath(head);
+            var pending = requests.ToList();
+
+            while (pending.Count > 0)
             {
-                int closest = req.OrderBy(r => Math.Abs(r - head)).First();
-                int move = Math.Abs(head - closest);
-                steps.Add((head, closest, move));
-                total += move;
-                head = closest;
-                req.Remove(closest);
+                int closest = pending.OrderBy(r => Math.Abs(r - path.Position)).First();
+                path.Serve(closest);
+                pending.Remove(closest);
             }
-            return total;
+            return path.Steps;
         }
-        public static int SCAN_RIGHT(int[] requests, int head, int diskSize, Direction direction, out List<(int from, int to, int move)> steps)
+
+        /// <summary>Elevator: serve requests in the direction, go to the end of the disk, then reverse.</summary>
+        public static List<SeekStep> SCAN(IEnumerable<int> requests, int head, int diskSize, Direction direction)
         {
-            steps = new List<(int from, int to, int move)>();
-            List<int> req = requests.Distinct().ToList();
+            Split(requests, head, direction, out List<int> ahead, out List<int> behind);
+            int edge = direction == Direction.Right ? diskSize - 1 : 0;
 
-            req.Sort();
-
-            List<int> left = req.Where(r => r < head).OrderByDescending(r => r).ToList();
-            List<int> right = req.Where(r => r >= head).OrderBy(r => r).ToList();
-
-            int total = 0;
-            int current = head;
-
-            foreach (int r in right)
-            {
-                int move = Math.Abs(current - r);
-                steps.Add((current, r, move));
-                total += move;
-                current = r;
-            }
-
-            // Đi đến rìa phải (diskSize - 1)
-            if (current < diskSize - 1)
-            {
-                int move = diskSize - 1 - current;
-                steps.Add((current, diskSize - 1, move));
-                total += move;
-                current = diskSize - 1;
-            }
-
-            // Quay lại, xử lý bên trái
-            foreach (int r in left)
-            {
-                int move = Math.Abs(current - r);
-                steps.Add((current, r, move));
-                total += move;
-                current = r;
-            }
-
-            return total;
+            var path = new HeadPath(head);
+            path.Serve(ahead);
+            path.MoveToEdge(edge);
+            path.Serve(behind);
+            return path.Steps;
         }
-        public static int CSCAN_RIGHT(int[] requests, int head, int diskSize, out List<(int from, int to, int move)> steps)
+
+        /// <summary>
+        /// Circular SCAN: serve requests in the direction, go to the end of the disk,
+        /// jump to the opposite end and keep moving in the same direction.
+        /// </summary>
+        public static List<SeekStep> CSCAN(IEnumerable<int> requests, int head, int diskSize, Direction direction)
         {
-            steps = new List<(int, int, int)>();
-            List<int> req = requests.ToList();
-            req.Add(head);
-            req.Sort();
-            int total = 0;
-            int index = req.IndexOf(head);
+            Split(requests, head, direction, out List<int> ahead, out List<int> behind);
+            int edge = direction == Direction.Right ? diskSize - 1 : 0;
+            int oppositeEdge = direction == Direction.Right ? 0 : diskSize - 1;
 
-            for (int i = index + 1; i < req.Count; i++)
+            var path = new HeadPath(head);
+            path.Serve(ahead);
+            path.MoveToEdge(edge);
+            if (behind.Count > 0)
             {
-                int move = Math.Abs(head - req[i]);
-                steps.Add((head, req[i], move));
-                total += move;
-                head = req[i];
+                path.MoveToEdge(oppositeEdge); // The return seek is counted as head movement
+                behind.Reverse();          // Continue in the original direction
+                path.Serve(behind);
             }
-
-            if (head != diskSize - 1)
-            {
-                steps.Add((head, diskSize - 1, diskSize - 1 - head));
-                total += diskSize - 1 - head;
-                steps.Add((diskSize - 1, 0, diskSize - 1));
-                total += diskSize - 1;
-                head = 0;
-            }
-
-            for (int i = 0; i < index; i++)
-            {
-                int move = Math.Abs(head - req[i]);
-                steps.Add((head, req[i], move));
-                total += move;
-                head = req[i];
-            }
-
-            return total;
+            return path.Steps;
         }
-        public static int SCAN_LEFT(int[] requests, int head, int diskSize, Direction direction, out List<(int from, int to, int move)> steps)
+
+        /// <summary>Like SCAN, but the head only goes as far as the last request in each direction.</summary>
+        public static List<SeekStep> LOOK(IEnumerable<int> requests, int head, Direction direction)
         {
-            steps = new List<(int from, int to, int move)>();
-            List<int> req = requests.Distinct().ToList();
+            Split(requests, head, direction, out List<int> ahead, out List<int> behind);
 
-            req.Sort();
-
-            List<int> left = req.Where(r => r <= head).OrderByDescending(r => r).ToList(); // bên trái & tại head
-            List<int> right = req.Where(r => r > head).OrderBy(r => r).ToList();           // bên phải
-
-            int total = 0;
-            int current = head;
-
-            // Đi trái
-            foreach (int r in left)
-            {
-                int move = Math.Abs(current - r);
-                steps.Add((current, r, move));
-                total += move;
-                current = r;
-            }
-
-            // Đi đến rìa trái (0)
-            if (current > 0)
-            {
-                int move = current;
-                steps.Add((current, 0, move));
-                total += move;
-                current = 0;
-            }
-
-            // Quay ngược lại, xử lý bên phải
-            foreach (int r in right)
-            {
-                int move = Math.Abs(current - r);
-                steps.Add((current, r, move));
-                total += move;
-                current = r;
-            }
-
-            return total;
+            var path = new HeadPath(head);
+            path.Serve(ahead);
+            path.Serve(behind);
+            return path.Steps;
         }
-        public static int CSCAN_LEFT(int[] requests, int head, int diskSize, out List<(int from, int to, int move)> steps)
+
+        /// <summary>Like C-SCAN, but the head jumps from the last request to the farthest request on the other side.</summary>
+        public static List<SeekStep> CLOOK(IEnumerable<int> requests, int head, Direction direction)
         {
-            steps = new List<(int from, int to, int move)>();
-            List<int> req = requests.ToList();
-            req.Add(head);
-            req.Sort();
+            Split(requests, head, direction, out List<int> ahead, out List<int> behind);
+            behind.Reverse(); // Continue in the original direction after the jump
 
-            int total = 0;
-            int index = req.IndexOf(head);
-
-            // Đi ngược về trái (giảm dần)
-            for (int i = index - 1; i >= 0; i--)
-            {
-                int move = Math.Abs(head - req[i]);
-                steps.Add((head, req[i], move));
-                total += move;
-                head = req[i];
-            }
-
-            if (head != 0)
-            {
-                steps.Add((head, 0, head));        // về rìa trái
-                total += head;
-
-                steps.Add((0, diskSize - 1, diskSize - 1)); // quay vòng về phải
-                total += diskSize - 1;
-
-                head = diskSize - 1;
-            }
-
-            // Xử lý các request bên phải
-            for (int i = req.Count - 1; i > index; i--)
-            {
-                int move = Math.Abs(head - req[i]);
-                steps.Add((head, req[i], move));
-                total += move;
-                head = req[i];
-            }
-
-            return total;
+            var path = new HeadPath(head);
+            path.Serve(ahead);
+            path.Serve(behind);
+            return path.Steps;
         }
-        public static int LOOK(int[] requests, int head, Direction direction, out List<(int from, int to, int move)> steps)
+
+        /// <summary>
+        /// Splits the requests into those ahead of the head in the given direction (in service order)
+        /// and those behind it (in order of distance from the head).
+        /// </summary>
+        private static void Split(IEnumerable<int> requests, int head, Direction direction,
+                                  out List<int> ahead, out List<int> behind)
         {
-            steps = new List<(int, int, int)>();
-            List<int> req = requests.ToList();
-            req.Sort();
+            var sorted = requests.OrderBy(r => r).ToList();
 
-            var left = req.Where(r => r < head).OrderByDescending(r => r).ToList();
-            var right = req.Where(r => r >= head).OrderBy(r => r).ToList(); // Lưu ý: r >= head để bao gồm nếu head là request
-
-            int total = 0;
-
-            // Luôn đi hết bên phải, rồi mới qua trái
-            foreach (int r in right)
+            if (direction == Direction.Right)
             {
-                int move = Math.Abs(head - r);
-                steps.Add((head, r, move));
-                total += move;
-                head = r;
+                ahead = sorted.Where(r => r >= head).ToList();
+                behind = sorted.Where(r => r < head).Reverse().ToList();
             }
-
-            foreach (int r in left)
+            else
             {
-                int move = Math.Abs(head - r);
-                steps.Add((head, r, move));
-                total += move;
-                head = r;
+                ahead = sorted.Where(r => r <= head).Reverse().ToList();
+                behind = sorted.Where(r => r > head).ToList();
             }
-
-            return total;
         }
-        public static int CLOOK(int[] requests, int head, out List<(int from, int to, int move)> steps)
+
+        /// <summary>Records the head movements while the head serves requests.</summary>
+        private class HeadPath
         {
-            steps = new List<(int, int, int)>();
-            List<int> req = requests.ToList();
-            req.Add(head);
-            req.Sort();
-            int total = 0;
-            int index = req.IndexOf(head);
+            public List<SeekStep> Steps { get; } = new List<SeekStep>();
+            public int Position { get; private set; }
 
-            for (int i = index + 1; i < req.Count; i++)
+            public HeadPath(int head)
             {
-                int move = Math.Abs(head - req[i]);
-                steps.Add((head, req[i], move));
-                total += move;
-                head = req[i];
+                Position = head;
             }
 
-            for (int i = 0; i < index; i++)
+            public void Serve(int request)
             {
-                int move = Math.Abs(head - req[i]);
-                steps.Add((head, req[i], move));
-                total += move;
-                head = req[i];
+                Steps.Add(new SeekStep(Position, request));
+                Position = request;
             }
 
-            return total;
+            public void Serve(IEnumerable<int> requests)
+            {
+                foreach (int r in requests)
+                    Serve(r);
+            }
+
+            /// <summary>Moves to a disk edge (skipped when the head is already there).</summary>
+            public void MoveToEdge(int edge)
+            {
+                if (Position != edge)
+                    Serve(edge);
+            }
         }
     }
 }
